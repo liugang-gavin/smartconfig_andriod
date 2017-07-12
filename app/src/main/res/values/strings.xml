@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">Smart Config Demo</string>
+
+    <!-- Strings related to login -->
+    <string name="prompt_email">SSID</string>
+    <string name="prompt_password">Password</string>
+    <string name="action_sign_in">Configure WIFI</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_sign_in_short">Configure WIFI</string>
+    <string name="error_invalid_email">This SSID is invalid</string>
+    <string name="error_invalid_password">This password is too short</string>
+    <string name="error_incorrect_password">This password is incorrect</string>
+    <string name="error_field_required">This field is required</string>
+    <string name="error_no_wifi">Please connect to WIFI first</string>
+
+</resources>
