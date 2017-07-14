@@ -2,10 +2,15 @@ package nxp.muiticastdemo;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
-import android.annotation.TargetApi;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Build;
 import android.os.Bundle;
@@ -20,23 +25,12 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import java.util.ArrayList;
+
 /**
  * A login screen that offers login via email/password.
  */
-public class SmartConfigActivity extends AppCompatActivity  {
-
-    /**
-     * Id to identity READ_CONTACTS permission request.
-     */
-    private static final int REQUEST_READ_CONTACTS = 0;
-
-    /**
-     * A dummy authentication store containing known user names and passwords.
-     * TODO: remove after connecting to a real authentication system.
-     */
-    private static final String[] DUMMY_CREDENTIALS = new String[]{
-            "foo@example.com:hello", "bar@example.com:world"
-    };
+public class SmartConfigActivity extends AppCompatActivity {
     /**
      * Keep track of the login task to ensure we can cancel it if requested.
      */
@@ -45,9 +39,12 @@ public class SmartConfigActivity extends AppCompatActivity  {
     // UI references.
     private EditText mEmailView;
     private EditText mPasswordView;
+    private TextView mRcvView;
     private Button mEmailSignInButton;
     private View mProgressView;
     private SmartConfigSocket mSmartConfigSocket;
+    protected BroadcastReceiver mBroadcastReceiver;
+    ArrayList<String> mMsgList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,13 +54,19 @@ public class SmartConfigActivity extends AppCompatActivity  {
         // Set up the login form.
         mEmailView = (EditText) findViewById(R.id.SSID);
 
-        WifiManager mWifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        WifiInfo wifiInfo = mWifi.getConnectionInfo();
+        ConnectivityManager connectivityManager = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetInfo = connectivityManager.getActiveNetworkInfo();
+        if (activeNetInfo == null || activeNetInfo.getType() != ConnectivityManager.TYPE_WIFI) {
+            mEmailView.setText(getString(R.string.error_no_wifi));
+            mEmailView.setTextColor(ContextCompat.getColor(getApplicationContext(), R.color.colorError));
+            mEmailView.setError(getString(R.string.error_no_wifi));
+        } else {
+            WifiManager mWifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            WifiInfo wifiInfo = mWifi.getConnectionInfo();
 
-        if (wifiInfo.getSSID() != null)
             mEmailView.setText(wifiInfo.getSSID().replaceAll("\"", ""));
-        else
-            mEmailView.setText(R.string.error_no_wifi);
+        }
+
 
         mPasswordView = (EditText) findViewById(R.id.password);
         mPasswordView.setOnEditorActionListener(new TextView.OnEditorActionListener() {
@@ -77,6 +80,9 @@ public class SmartConfigActivity extends AppCompatActivity  {
             }
         });
 
+        mRcvView = (TextView) findViewById(R.id.recive);
+        mMsgList = new ArrayList<String>();
+
         mEmailSignInButton = (Button) findViewById(R.id.email_sign_in_button);
         mEmailSignInButton.setOnClickListener(new OnClickListener() {
             @Override
@@ -86,10 +92,32 @@ public class SmartConfigActivity extends AppCompatActivity  {
         });
 
         mProgressView = findViewById(R.id.login_progress);
-        mSmartConfigSocket = new SmartConfigSocket();
+        mSmartConfigSocket = new SmartConfigSocket(this);
+
+        mBroadcastReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    if (mIsConfiguring) {
+                        String text = intent.getExtras().getString("key") + "\n";
+                        boolean in = false;
+
+                        for (String str : mMsgList)
+                            if (str.equals(text)) {
+                                in = true;
+                                break;
+                            }
+
+                        if (!in) {
+                            mMsgList.add(text);
+                            mRcvView.append(text);
+                        }
+                    }
+                }
+            };
+
+        this.registerReceiver(mBroadcastReceiver,
+                new IntentFilter("android.intent.action.NEWDEVICE"));
     }
-
-
 
     /**
      * Attempts to sign in or register the account specified by the login form.
@@ -106,14 +134,17 @@ public class SmartConfigActivity extends AppCompatActivity  {
         }
 
         // Reset errors.
-        mEmailView.setError(null);
         mPasswordView.setError(null);
+        mRcvView.setText(null);
+        mMsgList.clear();
 
         // Store values at the time of the login attempt.
         String ssid = mEmailView.getText().toString();
         String password = mPasswordView.getText().toString();
 
-        if (TextUtils.isEmpty(password) || !isPasswordValid(password)) {
+        if (mEmailView.getError() != null){
+            return;
+        } else if (TextUtils.isEmpty(password) || !isPasswordValid(password)) {
             // There was an error; don't attempt login and focus the first
             // form field with an error.
             mPasswordView.setError(getString(R.string.error_invalid_password));
@@ -138,8 +169,8 @@ public class SmartConfigActivity extends AppCompatActivity  {
 
     /**
      * Shows the progress UI and hides the login form.
-     */
     @TargetApi(Build.VERSION_CODES.HONEYCOMB_MR2)
+     */
     private void showProgress(final boolean show) {
         // On Honeycomb MR2 we have the ViewPropertyAnimator APIs, which allow
         // for very easy animations. If available, use these APIs to fade-in
@@ -147,24 +178,18 @@ public class SmartConfigActivity extends AppCompatActivity  {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB_MR2) {
             int shortAnimTime = getResources().getInteger(android.R.integer.config_shortAnimTime);
 
-            mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
+            mProgressView.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
             mProgressView.animate().setDuration(shortAnimTime).alpha(
                     show ? 1 : 0).setListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationEnd(Animator animation) {
-                    mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
+                    mProgressView.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
                 }
             });
         } else {
             // The ViewPropertyAnimator APIs are not available, so simply show
             // and hide the relevant UI components.
-            mProgressView.setVisibility(show ? View.VISIBLE : View.GONE);
+            mProgressView.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
         }
     }
-
-
-
-
-
 }
-
